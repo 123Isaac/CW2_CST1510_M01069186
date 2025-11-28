@@ -1,3 +1,4 @@
+import streamlit as st
 import pandas as pd
 from app.data.db import DB_PATH, connect_database
 from app.data.schema import create_all_tables
@@ -121,39 +122,15 @@ def run_comprehensive_tests():
 def main():
     #setup_database_complete()
     #run_comprehensive_tests()
-    print("=" * 60)
-    print("Week 8: Database Demo")
-    print("=" * 60)
     
     # 1. Setup database
     conn = connect_database()
     create_all_tables(conn)
     
-    # 2. Migrate users
-    migrate_users_from_file(conn)
+    incidents = get_all_incidents(conn)
     
-    # 3. Test authentication
-    success, msg = register_user("Zck", "SecurePass123!", "analyst")
-    print(msg)
     
-    success, msg = login_user("Zck", "SecurePass123!")
-    print(msg)
-    
-    # 4. Test CRUD
-    incident_id = insert_incident(
-        conn,
-        "2024-11-05",
-        "Phishing",
-        "High",
-        "Open",
-        "Suspicious email detected",
-        "alice"
-    )
-    print(f"Created incident #{incident_id}")
-    
-    # 5. Query data
-    df = get_all_incidents(conn)
-    print(f"Total incidents: {len(df)}")
+    st.dataframe(incidents, use_container_width=True)
     
     conn.close()
 
