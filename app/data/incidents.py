@@ -71,3 +71,13 @@ def delete_incident(conn, incident_id):
     conn.commit()
     
     return cursor.rowcount
+
+def get_incident_by_Type(conn, incident_type):
+    """
+    Retrieve incidents by type.
+    """
+    return pd.read_sql_query(
+        "SELECT * FROM cyber_incidents WHERE incident_type = ?",
+        conn,
+        params=(incident_type,)
+    )

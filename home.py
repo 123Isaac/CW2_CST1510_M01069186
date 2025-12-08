@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from app.data.db import DB_PATH, connect_database
 from app.data.schema import create_all_tables
+from app.data.users import get_role_by_username
 from app.services.user_service import register_user, login_user, migrate_users_from_file
 from app.data.incidents import delete_incident, insert_incident, get_all_incidents, update_incident_status
 
@@ -123,16 +124,44 @@ def main():
     #setup_database_complete()
     #run_comprehensive_tests()
     
-    # 1. Setup database
-    conn = connect_database()
-    create_all_tables(conn)
     
-    incidents = get_all_incidents(conn)
+    st.title("Cyber Incident Management System")
     
+    if "logged_in" not in st.session_state:
+        st.session_state.logged_in = False
+    if "username" not in st.session_state:
+        st.session_state.username = ""
+    if "users"not in st.session_state:
+        st.session_state.users = []
+        
+    tab_login, tab_register = st.tabs(["Login", "Register"])
     
-    st.dataframe(incidents, use_container_width=True)
-    
-    conn.close()
+    with tab_login:
+        st.header("Login")
+        username = st.text_input("Username", key="login_username")
+        password = st.text_input("Password", type="password", key="login_password")
+        if st.button("Login"):
+            success, msg = login_user(username, password)
+            if success:
+                st.session_state.logged_in = True
+                st.session_state.username = username
+                st.session_state.role = get_role_by_username(username)
+                st.success("Login successful!")
+                st.switch_page("pages/1_Dashboard.py")
+            else:
+                st.error(f"Login failed: {msg}")
+    with tab_register:
+        st.header("Register")
+        new_username = st.text_input("New Username", key="register_username")
+        new_password = st.text_input("New Password", type="password", key="register_password")
+        role = st.selectbox("Role", ["user", "admin"], key="register_role")
+        if st.button("Register"):
+            success, msg = register_user(new_username, new_password, role)
+            if success:
+                st.success("Registration successful! You can now log in.")
+                st.info("Please switch to the Login tab to log in.")
+            else:
+                st.error(f"Registration failed: {msg}")
 
 if __name__ == "__main__":
     main()

@@ -22,3 +22,15 @@ def insert_user(username, password_hash, role='user'):
     )
     conn.commit()
     conn.close()
+    
+def get_role_by_username(username):
+    """Retrieve user role by username."""
+    conn = connect_database()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT role FROM users WHERE username = ?",
+        (username,)
+    )
+    result = cursor.fetchone()
+    conn.close()
+    return result[0] if result else None
