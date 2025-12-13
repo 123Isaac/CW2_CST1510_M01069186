@@ -6,118 +6,124 @@ import os
 import csv
 from google import genai
 from dotenv import load_dotenv
-
-if "logged_in" not in st.session_state:
-    st.session_state.logged_in = False
     
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
-if "auto_save_history" not in st.session_state:
-    st.session_state.auto_save_history = True
-
-
-def _persist_message(role: str, text: str, persist_path: str):
-    os.makedirs(os.path.dirname(persist_path), exist_ok=True)
-    timestamp = datetime.utcnow().isoformat()
-    with open(persist_path, "a", newline='', encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerow([timestamp, role, text])
 
 if not st.session_state.logged_in:
     st.error("Please log in to access the Dashboard.")
     if st.button("Go to Login Page"):
-        st.switch_page("main.py")
+        st.switch_page("home.py")
         st.stop()
 else:
+    # Load .env and prefer GENAI_API_KEY
+    load_dotenv()
+    apikey = os.getenv("GENAI_API_KEY")
+    if not apikey:
+        st.error("GENAI_API_KEY not found in environment variables. Please set it to use AI features.")
+
+    client = genai.Client(api_key=apikey)
+    st.set_page_config(page_title="Dashboard", layout="wide")
     st.title("Dashboard")
-    st.success(f"Welcome, {st.session_state.username}! You are logged in as '{st.session_state.get('role', 'user')}'.")
     
-load_dotenv()
-GENAI_API_KEY = os.getenv("GENAI_API_KEY")
-
-client = genai.Client(api_key=GENAI_API_KEY)
-
-prompt = st.text_area("Enter your query for the Cyber Incident Management System:")
-
-# persisted history CSV path
-persist_path = os.path.join(os.getcwd(), "DATA", "message_history.csv")
-
-if st.button("Get AI Response"):
-    if prompt.strip() == "":
-        st.error("Please enter a valid query.")
-    else:
-        # append user message to session history and optionally persist
-        st.session_state.chat_history.append({"role": "user", "content": prompt})
-        if st.session_state.auto_save_history:
-            try:
-                _persist_message("user", prompt, persist_path)
-            except Exception:
-                # don't fail the chat on persistence errors
-                pass
-
-        with st.spinner("Generating response..."):
-            contents = [
-                {"text": "You are an expert assistant for the Cyber Incident Management System."},
-                {"text": prompt}
-            ]
-
-            full_text = ""
-            try:
-                response_stream = client.models.generate_content_stream(
-                    model="gemini-2.0-flash",
-                    contents=contents
-                )
-
-                for chunk in response_stream:
-                    # stream chunk shapes vary; try common attributes
-                    if hasattr(chunk, "text") and chunk.text:
-                        full_text += chunk.text
-                    elif hasattr(chunk, "output_text") and chunk.output_text:
-                        full_text += chunk.output_text
-                    elif hasattr(chunk, "delta") and chunk.delta:
-                        # some stream shapes use delta
-                        full_text += str(chunk.delta)
-            except Exception as e:
-                # detect token/quota related issues and render a friendly message
-                msg = str(e).lower()
-                token_indicators = ["token", "quota", "insufficient", "exhausted", "no more tokens", "quota exceeded", "insufficient_quota", "insufficient_tokens"]
-                if any(ind in msg for ind in token_indicators):
-                    full_text = "The AI system is currently unavailable (out of tokens or quota). Please try again later."
-                else:
-                    full_text = "The AI system is currently unavailable. Please try again later."
-
-        # append assistant message and persist if enabled
-        st.session_state.chat_history.append({"role": "assistant", "content": full_text})
-        if st.session_state.auto_save_history:
-            try:
-                _persist_message("assistant", full_text, persist_path)
-            except Exception:
-                pass
-
-        st.markdown("### AI Response:")
-        st.write(full_text)
-
+    conn = connect_database()
+    incidents = get_all_incidents(conn)
     
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        #Account statistics
+        st.subheader("Total Incidents Reported by You")
+        user_incidents = incidents[incidents['reported_by'] == st.session_state.username]
+        st.metric("Total Incidents", len(user_incidents))
+    with col2:
+        #Account Role
+        st.subheader("Role")
+        st.metric("User Role", st.session_state.role)
+    with col3:
+        #AI Bot Interaction
+        st.subheader("AI Bot Interaction")
+        user_input = st.text_input("Ask the AI Bot a question about incidents:")
+        if st.button("Submit Question"):
+            if user_input.strip() == "":
+                st.warning("Please enter a question.")
+            else:
+                # Build contents: system instruction, chat history, incidents sample, and the user prompt
+                try:
+                    # System instruction: cyber incident management assistant
+                    system_instruction = (
+                        "You are a Cyber Incident Management AI. Assist with triage, summarization, prioritization, "
+                        "and recommending next actions for cyber incidents. Be concise, factual, and avoid fabricating data. "
+                        "The incidents database is included below for reference — DO NOT reference or cite it unless the user explicitly requests you to do so. "
+                        "If asked to reference incidents, cite rows/fields exactly as provided."
+                    )
+
+                    # Recent chat history from session state
+                    session_lines = []
+                    for q, a in st.session_state.chat_history[-10:]:
+                        session_lines.append(f"Q: {q}\nA: {a}")
+                    session_chat = "\n---\n".join(session_lines) if session_lines else "(no recent chat history)"
+
+                    # Also include last 10 lines from DATA/message_history.csv if present
+                    from pathlib import Path
+                    project_root = Path(__file__).resolve().parents[1]
+                    msg_path = project_root / "DATA" / "message_history.csv"
+                    file_chat = "(no chat history file)"
+                    try:
+                        if msg_path.exists():
+                            with msg_path.open(newline="", encoding="utf-8") as mf:
+                                import csv as _csv
+                                rows = list(_csv.reader(mf))
+                            if rows:
+                                last = rows[-10:]
+                                lines = []
+                                for r in last:
+                                    if len(r) >= 3:
+                                        timestamp, role, msg = r[0], r[1], r[2]
+                                    elif len(r) == 2:
+                                        timestamp, role = r[0], r[1]
+                                        msg = ""
+                                    else:
+                                        timestamp = ""
+                                        role = "unknown"
+                                        msg = ",".join(r)
+                                    lines.append(f"{timestamp} [{role}]: {msg}")
+                                file_chat = "\n".join(lines)
+                    except Exception:
+                        file_chat = "(could not read message_history.csv)"
+
+                    # Sample incidents: use DataFrame `incidents` (from get_all_incidents)
+                    try:
+                        if incidents is None or len(incidents) == 0:
+                            incidents_sample = "(incidents DB appears empty)"
+                        else:
+                            incidents_sample = incidents.head(10).to_csv(index=False)
+                    except Exception:
+                        incidents_sample = "(could not sample incidents)"
+
+                    # Compose full contents
+                    full_contents = (
+                        "SYSTEM INSTRUCTION:\n" + system_instruction + "\n\n"
+                        + "SESSION CHAT HISTORY (most recent):\n" + session_chat + "\n\n"
+                        + "FILE CHAT HISTORY (message_history.csv last lines):\n" + file_chat + "\n\n"
+                        + "INCIDENTS DATABASE (included for reference; DO NOT REFERENCE UNLESS ASKED):\n" + incidents_sample + "\n\n"
+                        + "USER PROMPT:\n" + user_input
+                    )
+
+                    response = client.models.generate_content(
+                        model="gemini-2.5-flash",
+                        contents=full_contents,
+                    )
+                    answer = getattr(response, "text", str(response))
+                    # save to session chat history
+                    st.session_state.chat_history.append((user_input, answer))
+                except Exception as e:
+                    st.error(f"API call failed: {e}")
+
     st.divider()
-    
-    # show chat history
-    with st.expander("Chat History", expanded=False):
-        if not st.session_state.chat_history:
-            st.info("No messages yet.")
-        else:
-            for msg in st.session_state.chat_history:
-                role = msg.get("role", "user")
-                content = msg.get("content", "")
-                if role == "assistant":
-                    st.code(content)
-                elif role == "system":
-                    st.caption(content)
-                else:
-                    st.write(f"**You:** {content}")
-
-    if st.button("Logout"):
-        st.session_state.logged_in = False
-        st.session_state.username = ""
-        st.success("You have been logged out.")
-        st.switch_page("main.py")
-    
+    st.subheader("AI Chat History")
+    for question, answer in st.session_state.chat_history:
+        st.markdown(f"**Q:** {question}")
+        st.markdown(f"**A:** {answer}")
+        st.markdown("---")
+    st.divider()
+    #

@@ -40,7 +40,7 @@ else:
             rows_updated = update_incident_status(conn, selected_id, new_status)
             if rows_updated:
                 st.success(f"Incident ID {selected_id} status updated to '{new_status}'")
-                st.experimental_rerun()
+                st.rerun()
             else:
                 st.error("Failed to update incident status.")
         
@@ -49,7 +49,7 @@ else:
             rows_deleted = delete_incident(conn, selected_id)
             if rows_deleted:
                 st.success(f"Incident ID {selected_id} deleted successfully.")
-                st.experimental_rerun()
+                st.rerun()
             else:
                 st.error("Failed to delete incident.")
 

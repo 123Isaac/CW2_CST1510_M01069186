@@ -60,8 +60,6 @@ def setup_database_complete():
     print("="*60)
     print(f"\n Database location: {DB_PATH.resolve()}")
     print("\nYou're ready for Week 9 (Streamlit web interface)!")
-
-def run_comprehensive_tests():
     """
     Run comprehensive tests on your database.
     """
